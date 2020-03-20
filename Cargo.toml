@@ -1,0 +1,17 @@
+[package]
+name = "genetic"
+version = "0.1.0"
+authors = ["aleksanderwawrzyniak <aleksanderwawrzyniak98@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[build]
+rustflags = "-C target-cpu=native"
+
+[dependencies]
+structopt = "0.3.11"
+structopt-derive = "0.4.4"
+rand = "0.7.3"
+rayon = "1.3.0"
+nalgebra = "0.20.0"
+crossbeam = "0.7.3"

@@ -1,0 +1,11 @@
+/target
+**/*.rs.bk
+/analysis/results
+/analysis/plots
+*.csv
+*.txt
+*.zip
+*.pdf
+/pictures
+/results
+/report.md
