@@ -11,7 +11,7 @@ if data[-1] == '':
 data[:] = [float(row) for row in data]
 
 for i in range(2, len(sys.argv)):
-    with open(sys.argv[2]) as f:
+    with open(sys.argv[i]) as f:
         file_data = f.readlines()
 
     if file_data[-1] == '':

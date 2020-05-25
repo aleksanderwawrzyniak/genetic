@@ -1,106 +1,113 @@
-use super::{utils::get_sparse_vec, Float, FloatDVector};
+use super::{utils::get_sparse_vec, Float};
 use nalgebra::base::dimension::{Dynamic, U1};
-use nalgebra::SliceStorage;
+use nalgebra::{SliceStorage, SliceStorageMut};
 use rand::{prelude::ThreadRng, Rng};
 
 pub type Individual<'a> =
     nalgebra::Matrix<Float, U1, Dynamic, SliceStorage<'a, Float, U1, Dynamic, U1, Dynamic>>;
 
+pub type IndividualMut<'a> =
+    nalgebra::Matrix<Float, U1, Dynamic, SliceStorageMut<'a, Float, U1, Dynamic, U1, Dynamic>>;
+
 pub trait Mutate {
     type Output;
-    fn mutate(&mut self, mutation_rate: f64, rng: &mut ThreadRng) -> Self::Output;
+
+    fn mutate(&mut self, mutation_rate: f64, rng: &mut ThreadRng);
 }
 
 pub trait Crossover {
-    type New;
+    type Parent;
 
     fn crossover(
-        first_parent: Self,
-        second_parent: Self,
+        &mut self,
+        first_parent: Self::Parent,
+        second_parent: Self::Parent,
         crossover_rate: f64,
         cutting_point: usize,
         rng: &mut ThreadRng,
-    ) -> Self::New;
+    );
 
     fn random_crossover(
-        first_parent: Self,
-        second_parent: Self,
+        &mut self,
+        first_parent: Self::Parent,
+        second_parent: Self::Parent,
         crossover_rate: f64,
         rng: &mut ThreadRng,
-    ) -> Self::New;
+    );
 }
 
-impl Mutate for FloatDVector {
-    type Output = Vec<Float>;
-    fn mutate(&mut self, mutation_rate: f64, rng: &mut ThreadRng) -> Self::Output {
-        let n = self.nrows();
-        // dbg!(n);
-        let sparse_vec = get_sparse_vec(n, (n as f64 * mutation_rate) as usize, rng);
+impl<'a> Mutate for IndividualMut<'a> {
+    type Output = ();
 
-        let mutated = self
-            .iter_mut()
-            .zip(sparse_vec.into_iter())
-            .map(|(first, second)| (*first + second) % 2)
-            .collect();
+    fn mutate(&mut self, mutation_rate: f64, rng: &mut ThreadRng) {
+        let sparse_vector = get_sparse_vec(
+            self.iter().len(),
+            (mutation_rate * self.iter().len() as f64) as usize,
+            rng,
+        );
 
-        mutated
+        self.iter_mut()
+            .zip(sparse_vector.iter())
+            .for_each(|(gene, to_change)| *gene = (*gene + to_change) % 2)
     }
 }
 
-impl<'a> Crossover for Individual<'a> {
-    type New = FloatDVector;
+impl<'a> Crossover for IndividualMut<'a> {
+    // parents do not have to be references to the Individual type ( check above ),
+    // because it is a SliceStorage, which is a reference to matrix or vector
+    type Parent = Individual<'a>;
 
     fn crossover(
-        first_parent: Self,
-        second_parent: Self,
+        &mut self,
+        first_parent: Self::Parent,
+        second_parent: Self::Parent,
         crossover_rate: f64,
         cutting_point: usize,
         rng: &mut ThreadRng,
-    ) -> Self::New {
+    ) {
+        let first_parent_iter = first_parent.iter().cloned();
+
         if rng.gen_range(0f64, 1f64) > crossover_rate {
-            return FloatDVector::from_vec(first_parent.iter().cloned().collect());
+            self.iter_mut()
+                .zip(first_parent_iter)
+                .for_each(|(c, p)| *c = p);
+
+            return;
         }
 
-        let first_parent: Vec<Float> = first_parent.into_iter().cloned().collect();
-        let second_parent: Vec<Float> = second_parent.into_iter().cloned().collect();
+        let second_parent_iter = second_parent.iter().cloned();
 
-        dbg!(&first_parent, &second_parent);
-
-        let new_child = first_parent
-            .into_iter()
+        let parents_iter = first_parent_iter
             .take(cutting_point)
-            .chain(second_parent.into_iter().skip(cutting_point))
-            .collect();
-        dbg!(&new_child);
+            .chain(second_parent_iter.skip(cutting_point));
 
-        FloatDVector::from_vec(new_child)
+        self.iter_mut().zip(parents_iter).for_each(|(c, p)| *c = p);
     }
 
     fn random_crossover(
-        first_parent: Self,
-        second_parent: Self,
+        &mut self,
+        first_parent: Self::Parent,
+        second_parent: Self::Parent,
         crossover_rate: f64,
         rng: &mut ThreadRng,
-    ) -> Self::New {
+    ) {
+        let first_parent_iter = first_parent.iter().cloned();
+
         if rng.gen_range(0f64, 1f64) > crossover_rate {
-            return FloatDVector::from_vec(first_parent.into_iter().map(|i| *i).collect());
+            self.iter_mut()
+                .zip(first_parent_iter)
+                .for_each(|(c, p)| *c = p);
+
+            return;
         }
 
-        let parents_length = first_parent.ncols();
-        // dbg!(parents_length);
-        let first_parent: Vec<Float> = first_parent.into_iter().map(|i| *i).collect();
-        let second_parent: Vec<Float> = second_parent.into_iter().map(|i| *i).collect();
-        let cutting_point = rng.gen_range(0usize, parents_length);
+        let second_parent_iter = second_parent.iter().cloned();
 
-        // dbg!(&first_parent, &second_parent);
-
-        let new_child = first_parent
-            .into_iter()
+        let cutting_point = rng.gen_range(0usize, first_parent.iter().len());
+        let parents_iter = first_parent_iter
             .take(cutting_point)
-            .chain(second_parent.into_iter().skip(cutting_point))
-            .collect();
-        // dbg!(&new_child);
+            .chain(second_parent_iter.skip(cutting_point));
 
-        FloatDVector::from_vec(new_child)
+        self.iter_mut().zip(parents_iter).for_each(|(c, p)| *c = p);
     }
 }

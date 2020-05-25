@@ -10,8 +10,8 @@ mod generator;
 mod loader;
 mod opt;
 
-use data_structures::population::Population;
-use data_structures::{task::Task, DynamicResult};
+use crate::data_structures::population::Population;
+use crate::data_structures::{task::Task, DynamicResult};
 use opt::Opt;
 use std::rc::Rc;
 use std::{fs::File, io::Write, time::Instant};
@@ -25,46 +25,43 @@ fn main() -> DynamicResult<()> {
             Ok(_) => {}
             Err(e) => println!("An error ocurred during tasks generation: {}", e),
         },
-        Opt::Read(read) => match loader::read(read.file_name.unwrap_or("tasks.csv".to_string())) {
-            Ok(task) => {
-                let tasks: Rc<Task> = Rc::new(task);
-                println!("{:?}", tasks.clone())
+        Opt::Read(read) => {
+            match loader::read(read.file_name.unwrap_or_else(|| "tasks.csv".to_string())) {
+                Ok(task) => {
+                    let tasks: Rc<Task> = Rc::new(task);
+                    println!("{:?}", tasks)
+                }
+                Err(e) => eprintln!("Error: {}", e),
             }
-            Err(e) => eprintln!("Error: {}", e),
-        },
+        }
         Opt::Init(config) => {
             let start = Instant::now();
 
-            match loader::read(config.file_name.unwrap_or("tasks.csv".to_string())) {
+            match loader::read(config.file_name.unwrap_or_else(|| "tasks.csv".to_string())) {
                 Ok(task) => {
-                    // println!("{:?}", &task);
                     let time = start.elapsed().as_secs_f32();
                     println!("{}", time);
                     let population = Population::generate_initial_population(
                         config.size,
                         task.number_of_objects,
+                        config.density,
                     );
                     let time = start.elapsed().as_secs_f32();
 
-                    // println!(
-                    //     "population size: {} x {} ",
-                    //     config.size, task.number_of_objects
-                    // );
                     println!("{}", time);
 
                     let _ = population.evaluate(&task);
-                    // println!("{}", v);
                 }
                 Err(e) => println!("{}", e),
             }
         }
         Opt::Evolve(config) => match algorithm::evolve(&config) {
             Ok(results) => {
-                println!("{:?}", &results.iter().map(|&x| x).collect::<Vec<Float>>());
+                println!("{:?}", &results.iter().cloned().collect::<Vec<Float>>());
                 let mut output_file = File::create(&config.output_file).unwrap();
                 results
                     .iter()
-                    .for_each(|&x| output_file.write_fmt(format_args!("{}\n", x)).unwrap());
+                    .for_each(|x| output_file.write_fmt(format_args!("{}\n", x)).unwrap());
                 println!(
                     "best individual: {}",
                     &results

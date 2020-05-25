@@ -23,9 +23,9 @@ impl Task {
             number_of_objects,
             max_weight,
             max_size,
-            weights: weights,
-            sizes: sizes,
-            costs: costs,
+            weights,
+            sizes,
+            costs,
         }
     }
 

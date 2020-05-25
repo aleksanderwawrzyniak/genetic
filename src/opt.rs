@@ -48,6 +48,11 @@ pub struct Init {
     /// The size of the population
     pub size: usize,
 
+    /// The density of the population - defines, statistically,
+    /// how many ones will be in the initial population
+    /// the higher the value, the lower the density
+    pub density: usize,
+
     /// File with generated tasks
     pub file_name: Option<String>,
 }

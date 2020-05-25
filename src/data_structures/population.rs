@@ -1,17 +1,17 @@
 use super::{
-    individual::{Crossover, Individual, Mutate},
+    individual::{Crossover, Mutate},
     task::Task,
     utils::get_sparse_DVec_with,
-    Float, FloatDVector, PopulationMatrix,
+    DynamicResult, Float, FloatDVector, PopulationMatrix,
 };
 use crossbeam::thread;
-use nalgebra::base::dimension::Dim;
+use nalgebra::{base::dimension::Dim, DMatrix};
 use rand::{
     distributions::{Distribution, Uniform},
     prelude::ThreadRng,
     thread_rng,
 };
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use rayon::iter::{IntoParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 
 #[derive(Debug)]
 pub struct Population {
@@ -20,8 +20,12 @@ pub struct Population {
 
 impl Population {
     #[inline(always)]
-    pub fn generate_initial_population(population_size: usize, number_of_elements: usize) -> Self {
-        let dist = Uniform::from(0..15 as Float);
+    pub fn generate_initial_population(
+        population_size: usize,
+        number_of_elements: usize,
+        population_density: usize,
+    ) -> Self {
+        let dist = Uniform::from(0..population_density as Float);
 
         let matrix: Vec<Float> = (0..number_of_elements * population_size)
             .into_par_iter()
@@ -71,23 +75,56 @@ impl Population {
         crossover_rate: f64,
         cutting_point: usize,
         mutation_rate: f64,
-        rand: &mut ThreadRng,
-    ) -> Float {
+        workbench: &mut DMatrix<Float>,
+    ) -> DynamicResult<Float> {
         let evaluation = self.evaluate(&task);
 
         let (_, best) = evaluation.argmax();
 
-        self.population = Self::get_new_generation(
-            &self.population,
-            &evaluation,
-            tournament_size,
-            crossover_rate,
-            cutting_point,
-            mutation_rate,
-            rand,
-        );
+        workbench
+            .row_iter_mut()
+            .collect::<Vec<_>>()
+            .par_iter_mut()
+            .for_each_init(
+                || thread_rng(),
+                |mut rng, individual| {
+                    let first_parent_idx =
+                        tournament_selection(tournament_size, &evaluation, &mut rng);
+                    let second_parent_idx =
+                        tournament_selection(tournament_size, &evaluation, &mut rng);
+                    let first_parent = self.population.row(first_parent_idx);
+                    let second_parent = self.population.row(second_parent_idx);
 
-        best
+                    individual.crossover(
+                        first_parent,
+                        second_parent,
+                        crossover_rate,
+                        cutting_point,
+                        &mut rng,
+                    );
+                    individual.mutate(mutation_rate, &mut rng);
+                },
+            );
+
+        // make sure, it is safe to swap the population and workbench,
+        // return error, if they differ in size
+        if workbench.nrows() != self.population.nrows()
+            || workbench.ncols() != self.population.ncols()
+        {
+            // TODO: refactor error
+            return Err("matrices differ in size, therefore cannot be swapped".into());
+        }
+
+        // we have already guaranteed, it will be safe to swap the two matrices, as they are the same size
+        // unsafe block is needed for method `as_vec_mut()` on type nalgebra::base::VecStorage
+        unsafe {
+            std::mem::swap(
+                self.population.data.as_vec_mut(),
+                workbench.data.as_vec_mut(),
+            );
+        };
+
+        Ok(best)
     }
 
     pub fn evolve_generation_with_random_barrier(
@@ -96,78 +133,53 @@ impl Population {
         tournament_size: usize,
         crossover_rate: f64,
         mutation_rate: f64,
-        rand: &mut ThreadRng,
-    ) -> Float {
+        workbench: &mut DMatrix<Float>,
+    ) -> DynamicResult<Float> {
         let evaluation = self.evaluate(&task);
 
         let (_, best) = evaluation.argmax();
 
-        self.population = Self::get_new_generation_with_random_barrier(
-            &self.population,
-            &evaluation,
-            tournament_size,
-            crossover_rate,
-            mutation_rate,
-            rand,
-        );
+        workbench
+            .row_iter_mut()
+            .collect::<Vec<_>>()
+            .par_iter_mut()
+            .for_each_init(
+                || thread_rng(),
+                |mut rng, individual| {
+                    let first_parent_idx =
+                        tournament_selection(tournament_size, &evaluation, &mut rng);
+                    let second_parent_idx =
+                        tournament_selection(tournament_size, &evaluation, &mut rng);
+                    let first_parent = self.population.row(first_parent_idx);
+                    let second_parent = self.population.row(second_parent_idx);
 
-        best
-    }
+                    individual.random_crossover(
+                        first_parent,
+                        second_parent,
+                        crossover_rate,
+                        &mut rng,
+                    );
+                    individual.mutate(mutation_rate, &mut rng);
+                },
+            );
 
-    fn get_new_generation(
-        population: &PopulationMatrix,
-        evaluation: &FloatDVector,
-        tournament_size: usize,
-        crossover_rate: f64,
-        cutting_point: usize,
-        mutation_rate: f64,
-        rand: &mut ThreadRng,
-    ) -> PopulationMatrix {
-        let new_generation: Vec<Float> = (0..population.nrows())
-            .map(|_| {
-                let first_parent = tournament_selection(tournament_size, &evaluation, rand);
-                let second_parent = tournament_selection(tournament_size, &evaluation, rand);
-                let mut individual = Individual::crossover(
-                    population.row(first_parent),
-                    population.row(second_parent),
-                    crossover_rate,
-                    cutting_point,
-                    rand,
-                );
+        // make sure, it is safe to swap the population and workbench,
+        // return error, if they differ in size
+        if workbench.nrows() != self.population.nrows()
+            || workbench.ncols() != self.population.ncols()
+        {
+            // TODO: refactor error
+            return Err("matrices differ in size, therefore cannot be swapped".into());
+        }
 
-                individual.mutate(mutation_rate, rand)
-            })
-            .flatten()
-            .collect();
+        unsafe {
+            std::mem::swap(
+                self.population.data.as_vec_mut(),
+                workbench.data.as_vec_mut(),
+            );
+        };
 
-        PopulationMatrix::from_vec(population.nrows(), population.ncols(), new_generation)
-    }
-
-    fn get_new_generation_with_random_barrier(
-        population: &PopulationMatrix,
-        evaluation: &FloatDVector,
-        tournament_size: usize,
-        crossover_rate: f64,
-        mutation_rate: f64,
-        rand: &mut ThreadRng,
-    ) -> PopulationMatrix {
-        let new_generation: Vec<Float> = (0..population.nrows())
-            .map(|_| {
-                let first_parent = tournament_selection(tournament_size, &evaluation, rand);
-                let second_parent = tournament_selection(tournament_size, &evaluation, rand);
-                let mut individual = Individual::random_crossover(
-                    population.row(first_parent),
-                    population.row(second_parent),
-                    crossover_rate,
-                    rand,
-                );
-
-                individual.mutate(mutation_rate, rand)
-            })
-            .flatten()
-            .collect();
-
-        PopulationMatrix::from_vec(population.nrows(), population.ncols(), new_generation)
+        Ok(best)
     }
 
     fn get_evaluated_vec(
@@ -187,6 +199,14 @@ impl Population {
 
     fn get_summed_vec(population: &PopulationMatrix, vec: &FloatDVector) -> FloatDVector {
         population * vec
+    }
+
+    pub fn rows(&self) -> usize {
+        self.population.nrows()
+    }
+
+    pub fn cols(&self) -> usize {
+        self.population.ncols()
     }
 }
 

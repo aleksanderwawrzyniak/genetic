@@ -5,9 +5,6 @@ authors = ["aleksanderwawrzyniak <aleksanderwawrzyniak98@gmail.com>"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-[build]
-rustflags = "-C target-cpu=native"
-
 [dependencies]
 structopt = "0.3.11"
 structopt-derive = "0.4.4"

@@ -37,6 +37,12 @@ pub struct AlgorithmConfiguration {
     #[structopt(short = "t", long)]
     pub tournament_size: usize,
 
+    /// The density of the population - defines, statistically,
+    /// how many ones will be in the initial population
+    /// the higher the value, the lower the density
+    #[structopt(short, long)]
+    pub density: usize,
+
     /// input file with generated objects
     /// by default, it will search for "tasks.csv" file the same one,
     /// where Generate sub command will store it in,
@@ -48,13 +54,13 @@ pub struct AlgorithmConfiguration {
     #[structopt(long = "output", parse(from_os_str))]
     pub output_file: PathBuf,
 
-    /// if this flag is set, the program will prevent crash if `crossover-barrier` is set too high
+    /// if this flag is set, the program will prevent crash if `cutting-point` is set too high
     /// and change it to random, safe value.
     #[structopt(short = "r", long = "try-recover")]
     pub try_recover_from_barrier_overflow: bool,
 
     /// if this flag is set, the program will always use random `crossover-barrier` size
     /// for each crossover
-    #[structopt(short = "R", long = "rand-crossover-barrier")]
-    pub use_random_barrier: bool,
+    #[structopt(short = "R", long = "random-cutting-point")]
+    pub use_random_cutting_point: bool,
 }
